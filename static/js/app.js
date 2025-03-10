@@ -1,4 +1,9 @@
 $(document).ready(() => {
+    // Pre-fill Trafikverket API key if cached.
+  if (localStorage.getItem("tv_api_key")) {
+    $("#tvApiKey").val(localStorage.getItem("tv_api_key"));
+  }
+
   if (localStorage.getItem("ticketholders")) {
     let ticketholders = JSON.parse(localStorage.getItem("ticketholders"));
     loadTicketHolders(ticketholders);
@@ -207,14 +212,24 @@ function loadDepartures() {
 }
 
 $("#autoSubmit").click(() => {
-  // Read the auto date and start time inputs
+  // Read the auto date, start time, and Trafikverket API key inputs.
   let autoDate = $("#autoDate").val().trim();
   let startTime = $("#autoStartTime").val().trim();
+  let tvApiKey = $("#tvApiKey").val().trim();
 
-  // Build the JSON payload; include customer info if needed
+  // If a Trafikverket API key was entered, cache it.
+  if (tvApiKey) {
+    localStorage.setItem("tv_api_key", tvApiKey);
+  } else {
+    // Optionally, if it's not entered, try reading it from cache.
+    tvApiKey = localStorage.getItem("tv_api_key") || "";
+  }
+
+  // Build the JSON payload; include customer info if needed.
   let jsonData = { 
     startTime: startTime,
-    date: autoDate  // send the selected date
+    date: autoDate,
+    tv_api_key: tvApiKey
   };
 
   if (localStorage.getItem("ticketholders") && localStorage.getItem("ticketholder")) {
@@ -243,4 +258,3 @@ $("#autoSubmit").click(() => {
     }
   });
 });
-

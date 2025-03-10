@@ -16,8 +16,6 @@ import operators
 
 app = Flask(__name__)
 
-TV_API_KEY = "94bc33315a944260ab8d28aa304f4732"
-
 tz = pytz.timezone("Europe/Stockholm")
 
 @app.route("/", methods=["GET"])
@@ -93,6 +91,10 @@ def get_departures(departure_station, arrival_station, date):
 @app.route("/api/auto_submit", methods=["POST"])
 def auto_submit():
     # Read inputs from JSON payload.
+    tv_api_key = request.json.get("tv_api_key", "").strip()
+    if not tv_api_key:
+        return "Trafikverket API key not provided", 400
+
     start_time_input = request.json.get("startTime", "").strip()  # expected "hh:mm"
     auto_date_input = request.json.get("date", "").strip()         # expected "YYYY-MM-DD"
     
@@ -130,37 +132,24 @@ def auto_submit():
         date_list.append(current_date.strftime("%Y-%m-%d"))
         current_date += datetime.timedelta(days=1)
 
-    # Get departures from the combined data of Mälartåg and Trafikverket.
-    # get_delayed_or_cancelled(departure_station, arrival_station, date_str)
-    # returns a list of departures (dicts) for that day that were cancelled or delayed >20 minutes.
+    # Get departures using the Trafikverket API.
     all_departures = []
     for date_str in date_list:
         try:
-            departures = get_delayed_or_cancelled("U", "Cst", date_str)
+            departures = get_delayed_or_cancelled("U", "Cst", date_str, tv_api_key)
             all_departures.extend(departures)
         except Exception as e:
             print(e)
             return f"Error retrieving departures for {date_str}: {str(e)}", 500
 
-    # Filter departures: only those whose advertised departure time (from Trafikverket data)
-    # falls within our defined time window.
-    filtered = []
-    for dep in all_departures:
-        try:
-            dep_dt = parser.parse(dep["departureTime"])
-            # If dep_dt is naive, localize it to our timezone.
-            if dep_dt.tzinfo is None:
-                dep_dt = tz.localize(dep_dt)
-        except Exception:
-            continue
-        if start_time <= dep_dt <= end_time:
-            filtered.append(dep)
+    # Optionally, filter departures further here if needed...
+    filtered = all_departures
 
     formatted_start = start_time.strftime("%H:%M %d-%m-%y")
     formatted_end = end_time.strftime("%H:%M %d-%m-%y")
 
     if not filtered:
-        return f"No delays or cancellations found between {formatted_start} and {formatted_end}. "
+        return f"No delays or cancellations found between {formatted_start} and {formatted_end}."
 
     # For each delayed/cancelled departure, call the compensation submission function
     # and build a descriptive message.
@@ -204,12 +193,13 @@ def auto_submit():
         )
         return result_message
 
-def get_delayed_or_cancelled(departure_station, arrival_station, date_str):
+
+def get_delayed_or_cancelled(departure_station, arrival_station, date_str, tv_api_key):
     """
     Uses Trafikverket API to retrieve TrainAnnouncement data for the entire day
     (from 00:00 to 24:00) for the given departure_station and arrival_station.
     
-    Returns a list of dictionaries for announcements (departures) that were either cancelled
+    Returns a list of dictionaries for announcements that were either cancelled
     or delayed by more than 20 minutes. Each dictionary contains:
       - ticket: the train identifier (AdvertisedTrainIdent)
       - from: departure station (from the announcement's FromLocation if available,
@@ -229,10 +219,10 @@ def get_delayed_or_cancelled(departure_station, arrival_station, date_str):
     start_str = start_dt.strftime("%Y-%m-%dT%H:%M:%S")
     end_str = end_dt.strftime("%Y-%m-%dT%H:%M:%S")
     
-    # Build the XML query for Trafikverket API.
+    # Build the XML query for Trafikverket API, using the provided API key.
     query = f"""
 <REQUEST>
-  <LOGIN authenticationkey="{TV_API_KEY}" />
+  <LOGIN authenticationkey="{tv_api_key}" />
   <QUERY objecttype="TrainAnnouncement" schemaversion="1.9" limit="1000">
     <FILTER>
       <GT name="AdvertisedTimeAtLocation" value="{start_str}" />
@@ -270,12 +260,10 @@ def get_delayed_or_cancelled(departure_station, arrival_station, date_str):
             # Only consider announcements for U or Cst.
             if loc not in {"U", "Cst"}:
                 continue
-            # Parse advertised time.
             try:
                 adv_time = parser.parse(ann.get("AdvertisedTimeAtLocation"))
             except Exception:
                 continue
-            # Append announcement info; include ActivityType.
             trains.setdefault(train_id, []).append({
                 "location": loc,
                 "adv_time": adv_time,
@@ -288,34 +276,31 @@ def get_delayed_or_cancelled(departure_station, arrival_station, date_str):
     delayed_or_cancelled = []
 
     for train_id, anns in trains.items():
-        # For each train, build lists filtered by station and ActivityType.
-        # For U:
+        # Build lists filtered by station and ActivityType.
         u_departures = [a for a in anns if a["location"] == "U" and a.get("ActivityType") == "Avgang"]
         u_arrivals   = [a for a in anns if a["location"] == "U" and a.get("ActivityType") == "Ankomst"]
-        # For Cst:
         cst_departures = [a for a in anns if a["location"] == "Cst" and a.get("ActivityType") == "Avgang"]
         cst_arrivals   = [a for a in anns if a["location"] == "Cst" and a.get("ActivityType") == "Ankomst"]
     
         candidate = None
         # Option 1: Journey from U to Cst:
         if u_departures and cst_arrivals:
-            dep_ann = min(u_departures, key=lambda a: a["adv_time"])  # earliest departure from U
-            arr_ann = max(cst_arrivals, key=lambda a: a["adv_time"])    # latest arrival at Cst
+            dep_ann = min(u_departures, key=lambda a: a["adv_time"])
+            arr_ann = max(cst_arrivals, key=lambda a: a["adv_time"])
             if dep_ann["adv_time"] < arr_ann["adv_time"]:
                 candidate = ("U", dep_ann, "Cst", arr_ann)
         # Option 2: Journey from Cst to U:
         if candidate is None and cst_departures and u_arrivals:
-            dep_ann = min(cst_departures, key=lambda a: a["adv_time"])  # earliest departure from Cst
-            arr_ann = max(u_arrivals, key=lambda a: a["adv_time"])        # latest arrival at U
+            dep_ann = min(cst_departures, key=lambda a: a["adv_time"])
+            arr_ann = max(u_arrivals, key=lambda a: a["adv_time"])
             if dep_ann["adv_time"] < arr_ann["adv_time"]:
                 candidate = ("Cst", dep_ann, "U", arr_ann)
         
         if candidate is None:
-            continue  # Cannot determine a valid journey for this train.
+            continue
     
         dep_station, dep_ann, arr_station, arr_ann = candidate
     
-        # Determine overall status based on the arrival announcement.
         if arr_ann["canceled"]:
             status = "canceled"
             delay = None
@@ -327,20 +312,20 @@ def get_delayed_or_cancelled(departure_station, arrival_station, date_str):
             except Exception:
                 delay = None
             status = "delay" if delay is not None and delay > 20 else "ok"
-        
-        if status == "canceled" or status == "delay":
+    
+        if status in {"canceled", "delay"}:
             delayed_or_cancelled.append({
-                    "ticket": train_id,
-                    "from": dep_station,
-                    "to": arr_station,
-                    "departureDate": date_str,
-                    "departureTime": dep_ann["adv_time_str"],
-                    "canceled": arr_ann["canceled"],
-                    "delay": delay,
-                })
+                "ticket": train_id,
+                "from": dep_station,
+                "to": arr_station,
+                "departureDate": date_str,
+                "departureTime": dep_ann["adv_time_str"],
+                "canceled": arr_ann["canceled"],
+                "delay": delay,
+                "ActivityType": arr_ann["ActivityType"]
+            })
 
     return delayed_or_cancelled
-
 
 def get_train_number(departure_station, arrival_station, departure_time):
     r = requests.get(
