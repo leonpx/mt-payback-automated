@@ -205,3 +205,42 @@ function loadDepartures() {
     error: (e) => console.log(e),
   });
 }
+
+$("#autoSubmit").click(() => {
+  // Read the auto date and start time inputs
+  let autoDate = $("#autoDate").val().trim();
+  let startTime = $("#autoStartTime").val().trim();
+
+  // Build the JSON payload; include customer info if needed
+  let jsonData = { 
+    startTime: startTime,
+    date: autoDate  // send the selected date
+  };
+
+  if (localStorage.getItem("ticketholders") && localStorage.getItem("ticketholder")) {
+    let ticketholders = JSON.parse(localStorage.getItem("ticketholders"));
+    jsonData["customer"] = ticketholders[localStorage.getItem("ticketholder")];
+  }
+
+  $("#autoResult")
+    .attr("style", "color:green")
+    .attr("aria-busy", "true")
+    .text("Submitting...");
+
+  $.ajax({
+    type: "POST",
+    url: "/api/auto_submit",
+    contentType: "application/json",
+    data: JSON.stringify(jsonData),
+    success: (data) => {
+      $("#autoResult").attr("aria-busy", "false").text(data);
+    },
+    error: (err) => {
+      $("#autoResult")
+        .attr("aria-busy", "false")
+        .attr("style", "color:red")
+        .text("Request failed: " + err.responseText);
+    }
+  });
+});
+

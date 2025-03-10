@@ -71,16 +71,6 @@
             probably have submitted 50+ requests manually, but hey that wouldn't
             have been as fun, right?
           </p>
-          <h4>Get in contact</h4>
-          <p>
-            If you have an issue or a feature request or want to get in
-            touch for any other reason, you're free to
-            <a href="mailto:patrik@nordlen.se">email me</a>, or if you have a
-            GitHub account, you can
-            <a href="https://github.com/patriknordlen/mt-payback/issues"
-              >open an issue in the mt-payback repository</a
-            >.
-          </p>
         </article>
       </dialog>
       <section>
@@ -196,6 +186,43 @@
             </table>
             <div class="grid" style="text-align: center">
               <div id="result"></div>
+            </div>
+          </section>
+        </details>
+        <details>
+          <summary>Automatic submission</summary>
+          <section id="autoSubmission">
+            <table>
+              <tr>
+                <td>
+                  <label for="autoDate">Date</label>
+                  <input
+                    id="autoDate"
+                    type="date"
+                    name="autoDate"
+                    value="{{ today }}"
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <label for="autoStartTime">Start time (hh:mm):</label>
+                  <input
+                    type="text"
+                    id="autoStartTime"
+                    name="autoStartTime"
+                    placeholder="hh:mm"
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td style="text-align: center">
+                  <button type="button" id="autoSubmit">Automatically submit</button>
+                </td>
+              </tr>
+            </table>
+            <div class="grid" style="text-align: center; margin-top:20px;">
+              <div id="autoResult"></div>
             </div>
           </section>
         </details>
