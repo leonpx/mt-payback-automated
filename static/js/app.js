@@ -1,3 +1,5 @@
+var autoItems = [];
+
 $(document).ready(() => {
     // Pre-fill Trafikverket API key if cached.
   if (localStorage.getItem("tv_api_key")) {
@@ -217,15 +219,14 @@ $("#autoSubmit").click(() => {
   let startTime = $("#autoStartTime").val().trim();
   let tvApiKey = $("#tvApiKey").val().trim();
 
-  // If a Trafikverket API key was entered, cache it.
+  // Cache the Trafikverket API key.
   if (tvApiKey) {
     localStorage.setItem("tv_api_key", tvApiKey);
   } else {
-    // Optionally, if it's not entered, try reading it from cache.
     tvApiKey = localStorage.getItem("tv_api_key") || "";
   }
 
-  // Build the JSON payload; include customer info if needed.
+  // Build the JSON payload.
   let jsonData = { 
     startTime: startTime,
     date: autoDate,
@@ -248,13 +249,82 @@ $("#autoSubmit").click(() => {
     contentType: "application/json",
     data: JSON.stringify(jsonData),
     success: (data) => {
-      $("#autoResult").attr("aria-busy", "false").text(data);
+      $("#autoResult").attr("aria-busy", "false").empty();
+      if (data.status === "success" && data.found > 0) {
+        // Create a "Select All" checkbox
+        let selectAllContainer = $('<div></div>').css({"margin-bottom": "1em"});
+        let selectAllCheckbox = $('<input type="checkbox" id="selectAll">');
+        let selectAllLabel = $('<label for="selectAll"> Select All</label>');
+        selectAllContainer.append(selectAllCheckbox).append(selectAllLabel);
+        $("#autoResult").append(selectAllContainer);
+      
+        // Create a UL with id "submitList"
+        let list = $("<ul></ul>").attr("id", "submitList");
+      
+        data.items.forEach((item, idx) => {
+          // Each LI has the class "submitItem"
+          let li = $("<li></li>").addClass("submitItem");
+          let checkbox = $('<input type="checkbox" class="submission-item">').attr("data-index", idx);
+        
+          li.append(checkbox);
+          li.append(` Train ${item.ticket} from ${item.from} to ${item.to} scheduled at ${item.departureTime} was ${item.status}`);
+          list.append(li);
+        });
+        $("#autoResult").append(list);
+      
+        // Add a button to submit selected items.
+        let submitBtn = $('<button type="button" id="submitSelected">Submit selected</button>');
+        $("#autoResult").append(submitBtn);
+      
+        // Event listener for "Select All" functionality
+        selectAllCheckbox.on('click', function() {
+          $('.submission-item').prop('checked', this.checked);
+        });
+      
+        // If any individual checkbox is unchecked, uncheck the "Select All" checkbox
+        $('.submission-item').on('click', function() {
+          if (!$(this).prop('checked')) {
+            selectAllCheckbox.prop('checked', false);
+          } else if ($('.submission-item:checked').length === $('.submission-item').length) {
+            selectAllCheckbox.prop('checked', true);
+          }
+        });
+      } else {
+        $("#autoResult").text(data.message || "No delays or cancellations found.");
+      }
     },
     error: (err) => {
       $("#autoResult")
         .attr("aria-busy", "false")
         .attr("style", "color:red")
         .text("Request failed: " + err.responseText);
+    }
+  });
+});
+
+$("#autoResult").on("click", "#submitSelected", () => {
+  let selectedItems = [];
+  $(".submission-item:checked").each(function () {
+    let index = $(this).data("index");
+    selectedItems.push(autoItems[index]);
+  });
+  
+  if (selectedItems.length === 0) {
+    $("#autoResult").html("<p style='color:red;'>Please select at least one item to submit.</p>");
+    return;
+  }
+  
+  $.ajax({
+    type: "POST",
+    url: "/api/submit_selected",
+    contentType: "application/json",
+    data: JSON.stringify({ items: selectedItems }),
+    success: (data) => {
+      // Render the returned message in the #autoResult element.
+      $("#autoResult").html("<p style='color:green;'>" + data.message + "</p>");
+    },
+    error: (err) => {
+      $("#autoResult").html("<p style='color:red;'>Submission of selected items failed: " + err.responseText + "</p>");
     }
   });
 });

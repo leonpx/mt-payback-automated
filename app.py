@@ -87,6 +87,49 @@ def get_departures(departure_station, arrival_station, date):
 
     return jsonify(sorted(r.json()["data"]))
 
+@app.route("/api/submit_selected", methods=["POST"])
+def submit_selected():
+    data = request.get_json()
+    items = data.get("items", [])
+    if not items:
+        return jsonify({"status": "error", "message": "No items provided"}), 400
+
+    op = operators.MT()  # Using the MT class as in your submit() route
+    submitted_count = 0
+    errors = []
+
+    for item in items:
+        try:
+            # Call op.submit() for each selected item.
+            # It is assumed that each item contains the necessary keys.
+            #r = op.submit(
+            #    item.get("ticket"),
+            #    item.get("from"),
+            #    item.get("to"),
+            #    item.get("departureDate"),
+            #    item.get("departureTime"),
+            #    data.get("customer")  # Pass along customer info if available
+            #)
+            r = True
+            if r:
+                submitted_count += 1
+            else:
+                errors.append(f"Submission failed for train {item.get('ticket')}")
+        except Exception as e:
+            errors.append(str(e))
+
+    if errors:
+        return jsonify({
+            "status": "error",
+            "message": "Some errors occurred while submitting selected items.",
+            "errors": errors
+        }), 500
+
+    return jsonify({
+        "status": "success",
+        "submitted": submitted_count,
+        "message": f"{submitted_count} applications submitted."
+    })
 
 @app.route("/api/auto_submit", methods=["POST"])
 def auto_submit():
@@ -142,56 +185,50 @@ def auto_submit():
             print(e)
             return f"Error retrieving departures for {date_str}: {str(e)}", 500
 
-    # Optionally, filter departures further here if needed...
+    # Here you can optionally filter departures further based on the time window,
+    # if needed. In this example, we assume get_delayed_or_cancelled() has already done that.
     filtered = all_departures
 
-    formatted_start = start_time.strftime("%H:%M %d-%m-%y")
-    formatted_end = end_time.strftime("%H:%M %d-%m-%y")
-
-    if not filtered:
-        return f"No delays or cancellations found between {formatted_start} and {formatted_end}."
-
-    # For each delayed/cancelled departure, call the compensation submission function
-    # and build a descriptive message.
-    op = operators.MT()  # Using the MT class as in your submit() route
-    submitted_count = 0
-    errors = []
-    submission_messages = []
+    # Build a list of submission items.
+    submission_items = []
     for dep in filtered:
         try:
-            # Uncomment and use op.submit() as needed; here we simulate a successful submission.
-            # r = op.submit(
-            #    dep.get("ticket"),
-            #    dep.get("from"),
-            #    dep.get("to"),
-            #    dep.get("departureDate"),
-            #    dep.get("departureTime"),
-            #    request.json.get("customer")
-            # )
-            r = True  # For testing
-            if r:
-                submitted_count += 1
-                # Parse departureTime to a formatted string "hh:mm dd-mm-yy"
-                dt = parser.parse(dep["departureTime"])
-                formatted_time = dt.strftime("%H:%M %d-%m-%y")
-                if dep.get("canceled"):
-                    msg = f"Departure {dep.get('ticket')} from {dep.get('from')} to {dep.get('to')} scheduled at {formatted_time} was cancelled"
-                else:
-                    msg = f"Departure {dep.get('ticket')} from {dep.get('from')} to {dep.get('to')} scheduled at {formatted_time} was delayed {dep.get('delay'):.0f} min"
-                submission_messages.append(msg)
+            dt = parser.parse(dep["departureTime"])
+            # Format the departure time as "hh:mm dd-mm-yy"
+            formatted_time = dt.strftime("%H:%M %d-%m-%y")
+            if dep.get("canceled"):
+                item = {
+                    "ticket": dep.get("ticket"),
+                    "from": dep.get("from"),
+                    "to": dep.get("to"),
+                    "departureDate": dep.get("departureDate"),
+                    "departureTime": formatted_time,
+                    "status": "cancelled"
+                }
             else:
-                errors.append(f"Submission failed for train {dep.get('ticket')}")
+                item = {
+                    "ticket": dep.get("ticket"),
+                    "from": dep.get("from"),
+                    "to": dep.get("to"),
+                    "departureDate": dep.get("departureDate"),
+                    "departureTime": formatted_time,
+                    "status": f"delayed {dep.get('delay'):.0f} min"
+                }
+            submission_items.append(item)
         except Exception as e:
-            errors.append(str(e))
+            print(e)
+            continue
 
-    if errors:
-        return f"Some errors occurred: {', '.join(errors)}", 500
-    else:
-        result_message = (
-            f"{submitted_count} delays or cancellations found between {formatted_start} and {formatted_end}. "
-            "Applications submitted.\n" + "\n".join(submission_messages)
-        )
-        return result_message
+    if not submission_items:
+        result = f"No delays or cancellations found between {start_time.strftime('%H:%M %d-%m-%y')} and {end_time.strftime('%H:%M %d-%m-%y')}."
+        return jsonify({"status": "success", "found": 0, "items": [], "message": result})
+
+    # Instead of submitting automatically here, we return the list so the user can select.
+    result = (
+        f"{len(submission_items)} delays or cancellations found between "
+        f"{start_time.strftime('%H:%M %d-%m-%y')} and {end_time.strftime('%H:%M %d-%m-%y')}."
+    )
+    return jsonify({"status": "success", "found": len(submission_items), "items": submission_items, "message": result})
 
 
 def get_delayed_or_cancelled(departure_station, arrival_station, date_str, tv_api_key):
