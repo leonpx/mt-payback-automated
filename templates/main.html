@@ -192,6 +192,10 @@
         <details>
           <summary>Automatic submission</summary>
           <section id="autoSubmission">
+            <button type="button" id="infoButton" style="margin-top: 20px;">Help</button>
+            <div id="infoText" style="display: none; margin-top: 10px;">
+              <small>This function checks Mälartåg departures between Uppsala (U) and Stockholm C (Cst) for cancellations or delays greater than (or equal to) 20 minutes. If no start time is given, it checks all departures within the selected date; otherwise, it checks all departures from the start time and 24 hours ahead. To use this function, you need to supply a Trafikverket API key.</small>
+            </div>
             <table>
               <tr>
                 <td>
@@ -235,10 +239,22 @@
             <div class="grid" style="text-align: center; margin-top:20px;">
               <div id="autoResult"></div>
             </div>
+            
           </section>
         </details>
       </form>
     </main>
   </body>
   <script src="/static/js/app.js"></script>
+  <script>
+    // JavaScript to toggle the informational text
+    document.getElementById('infoButton').addEventListener('click', function() {
+      var infoText = document.getElementById('infoText');
+      if (infoText.style.display === 'none') {
+        infoText.style.display = 'block';
+      } else {
+        infoText.style.display = 'none';
+      }
+    });
+  </script>
 </html>

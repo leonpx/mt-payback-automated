@@ -2805,4 +2805,27 @@ textarea {
     list-style-type: none;
 }
 
+#infoButton {
+    width: 60px;
+    border: none; /* Remove default border */
+    border-radius: 12px; /* Rounded corners */
+    padding: 5px 10px; /* Vertical and horizontal padding */
+    font-size: 14px; /* Font size */
+    cursor: pointer; /* Pointer cursor on hover */
+}
+
+#listDiv {
+    border-radius: 0.25rem;
+    margin-top: 1em;
+    margin-bottom: 1em;
+    border: solid;
+    border-color: var(--form-element-border-color);
+    border-width: 1px;
+    box-sizing: border-box;
+    padding: 10px;
+    max-width: fit-content;
+    margin-left: auto;
+    margin-right: auto;
+}
+
 /*# sourceMappingURL=pico.min.css.map */

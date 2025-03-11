@@ -168,22 +168,12 @@ def auto_submit():
     except Exception as e:
         return f"Invalid time or date format: {str(e)}", 400
 
-    # Build a list of date strings (YYYY-MM-DD) that cover the time window.
-    date_list = []
-    current_date = start_time.date()
-    while current_date <= end_time.date():
-        date_list.append(current_date.strftime("%Y-%m-%d"))
-        current_date += datetime.timedelta(days=1)
-
     # Get departures using the Trafikverket API.
-    all_departures = []
-    for date_str in date_list:
-        try:
-            departures = get_delayed_or_cancelled("U", "Cst", date_str, tv_api_key)
-            all_departures.extend(departures)
-        except Exception as e:
-            print(e)
-            return f"Error retrieving departures for {date_str}: {str(e)}", 500
+    try:
+        all_departures = get_delayed_or_cancelled("U", "Cst", start_time, end_time, tv_api_key)
+    except Exception as e:
+        print(e)
+        return f"Error retrieving departures: {str(e)}", 500
 
     # Here you can optionally filter departures further based on the time window,
     # if needed. In this example, we assume get_delayed_or_cancelled() has already done that.
@@ -202,7 +192,7 @@ def auto_submit():
                     "from": dep.get("from"),
                     "to": dep.get("to"),
                     "departureDate": dep.get("departureDate"),
-                    "departureTime": formatted_time,
+                    "departureTime": dep.get("departureTime"),
                     "status": "cancelled"
                 }
             else:
@@ -211,7 +201,7 @@ def auto_submit():
                     "from": dep.get("from"),
                     "to": dep.get("to"),
                     "departureDate": dep.get("departureDate"),
-                    "departureTime": formatted_time,
+                    "departureTime": dep.get("departureTime"),
                     "status": f"delayed {dep.get('delay'):.0f} min"
                 }
             submission_items.append(item)
@@ -231,7 +221,7 @@ def auto_submit():
     return jsonify({"status": "success", "found": len(submission_items), "items": submission_items, "message": result})
 
 
-def get_delayed_or_cancelled(departure_station, arrival_station, date_str, tv_api_key):
+def get_delayed_or_cancelled(departure_station, arrival_station, start_time, end_time, tv_api_key):
     """
     Uses Trafikverket API to retrieve TrainAnnouncement data for the entire day
     (from 00:00 to 24:00) for the given departure_station and arrival_station.
@@ -249,38 +239,38 @@ def get_delayed_or_cancelled(departure_station, arrival_station, date_str, tv_ap
       - delay: delay in minutes (if not cancelled), else None
       - ActivityType: the activity type (e.g., "Avgang" or "Ankomst")
     """
-    # Define the time window for the given date: from 00:00 to 24:00.
-    date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
-    start_dt = datetime.datetime.combine(date_obj, datetime.time.min)
-    end_dt = datetime.datetime.combine(date_obj, datetime.time.max)
-    start_str = start_dt.strftime("%Y-%m-%dT%H:%M:%S")
-    end_str = end_dt.strftime("%Y-%m-%dT%H:%M:%S")
+
+    # Add 1 hour to compensate for arrival time, ugly fix
+    end_time = end_time + datetime.timedelta(hours=1)
+
+    # Convert start and end times to ISO 8601 format.
+    start_str = start_time.isoformat()
+    end_str = end_time.isoformat()
+    print(f"START: {start_str}, END: {end_str}")
     
     # Build the XML query for Trafikverket API, using the provided API key.
     query = f"""
-<REQUEST>
-  <LOGIN authenticationkey="{tv_api_key}" />
-  <QUERY objecttype="TrainAnnouncement" schemaversion="1.9" limit="1000">
-    <FILTER>
-      <GT name="AdvertisedTimeAtLocation" value="{start_str}" />
-      <LT name="AdvertisedTimeAtLocation" value="{end_str}" />
-      <EQ name="Operator" value="TDEV" />
-      <OR>
-        <EQ name="LocationSignature" value="{departure_station}" />
-        <EQ name="LocationSignature" value="{arrival_station}" />
-      </OR>
-    </FILTER>
-    <INCLUDE>AdvertisedTrainIdent</INCLUDE>
-    <INCLUDE>AdvertisedTimeAtLocation</INCLUDE>
-    <INCLUDE>TimeAtLocation</INCLUDE>
-    <INCLUDE>LocationSignature</INCLUDE>
-    <INCLUDE>Operator</INCLUDE>
-    <INCLUDE>Canceled</INCLUDE>
-    <INCLUDE>FromLocation</INCLUDE>
-    <INCLUDE>ToLocation</INCLUDE>
-    <INCLUDE>ActivityType</INCLUDE>
-  </QUERY>
-</REQUEST>
+        <REQUEST>
+          <LOGIN authenticationkey="{tv_api_key}" />
+          <QUERY objecttype="TrainAnnouncement" schemaversion="1.9" limit="1000">
+            <FILTER>
+              <GT name="AdvertisedTimeAtLocation" value="{start_str}" />
+              <LT name="AdvertisedTimeAtLocation" value="{end_str}" />
+              <EQ name="Operator" value="TDEV" />
+              <OR>
+                <EQ name="LocationSignature" value="{departure_station}" />
+                <EQ name="LocationSignature" value="{arrival_station}" />
+              </OR>
+            </FILTER>
+            <INCLUDE>AdvertisedTrainIdent</INCLUDE>
+            <INCLUDE>AdvertisedTimeAtLocation</INCLUDE>
+            <INCLUDE>TimeAtLocation</INCLUDE>
+            <INCLUDE>LocationSignature</INCLUDE>
+            <INCLUDE>Operator</INCLUDE>
+            <INCLUDE>Canceled</INCLUDE>
+            <INCLUDE>ActivityType</INCLUDE>
+          </QUERY>
+        </REQUEST>
     """
     tv_url = "https://api.trafikinfo.trafikverket.se/v2/data.json"
     headers = {"Content-Type": "text/xml"}
@@ -295,7 +285,7 @@ def get_delayed_or_cancelled(departure_station, arrival_station, date_str, tv_ap
             train_id = ann.get("AdvertisedTrainIdent", "N/A")
             loc = ann.get("LocationSignature", None)
             # Only consider announcements for U or Cst.
-            if loc not in {"U", "Cst"}:
+            if loc not in {departure_station, arrival_station}:
                 continue
             try:
                 adv_time = parser.parse(ann.get("AdvertisedTimeAtLocation"))
@@ -314,10 +304,10 @@ def get_delayed_or_cancelled(departure_station, arrival_station, date_str, tv_ap
 
     for train_id, anns in trains.items():
         # Build lists filtered by station and ActivityType.
-        u_departures = [a for a in anns if a["location"] == "U" and a.get("ActivityType") == "Avgang"]
-        u_arrivals   = [a for a in anns if a["location"] == "U" and a.get("ActivityType") == "Ankomst"]
-        cst_departures = [a for a in anns if a["location"] == "Cst" and a.get("ActivityType") == "Avgang"]
-        cst_arrivals   = [a for a in anns if a["location"] == "Cst" and a.get("ActivityType") == "Ankomst"]
+        u_departures = [a for a in anns if a["location"] == departure_station and a.get("ActivityType") == "Avgang"]
+        u_arrivals   = [a for a in anns if a["location"] == departure_station and a.get("ActivityType") == "Ankomst"]
+        cst_departures = [a for a in anns if a["location"] == arrival_station and a.get("ActivityType") == "Avgang"]
+        cst_arrivals   = [a for a in anns if a["location"] == arrival_station and a.get("ActivityType") == "Ankomst"]
     
         candidate = None
         # Option 1: Journey from U to Cst:
@@ -325,13 +315,13 @@ def get_delayed_or_cancelled(departure_station, arrival_station, date_str, tv_ap
             dep_ann = min(u_departures, key=lambda a: a["adv_time"])
             arr_ann = max(cst_arrivals, key=lambda a: a["adv_time"])
             if dep_ann["adv_time"] < arr_ann["adv_time"]:
-                candidate = ("U", dep_ann, "Cst", arr_ann)
+                candidate = (departure_station, dep_ann, arrival_station, arr_ann)
         # Option 2: Journey from Cst to U:
         if candidate is None and cst_departures and u_arrivals:
             dep_ann = min(cst_departures, key=lambda a: a["adv_time"])
             arr_ann = max(u_arrivals, key=lambda a: a["adv_time"])
             if dep_ann["adv_time"] < arr_ann["adv_time"]:
-                candidate = ("Cst", dep_ann, "U", arr_ann)
+                candidate = (arrival_station, dep_ann, departure_station, arr_ann)
         
         if candidate is None:
             continue
@@ -351,12 +341,15 @@ def get_delayed_or_cancelled(departure_station, arrival_station, date_str, tv_ap
             status = "delay" if delay is not None and delay > 20 else "ok"
     
         if status in {"canceled", "delay"}:
+            date_str = dep_ann["adv_time"].strftime("%Y-%m-%d")
+            time_str = dep_ann["adv_time"].strftime("%H:%M:%S")
+            print(f"DATE: {date_str}, TIME: {time_str}")
             delayed_or_cancelled.append({
                 "ticket": train_id,
                 "from": dep_station,
                 "to": arr_station,
                 "departureDate": date_str,
-                "departureTime": dep_ann["adv_time_str"],
+                "departureTime": time_str,
                 "canceled": arr_ann["canceled"],
                 "delay": delay,
                 "ActivityType": arr_ann["ActivityType"]

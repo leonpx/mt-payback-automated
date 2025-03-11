@@ -239,7 +239,6 @@ $("#autoSubmit").click(() => {
   }
 
   $("#autoResult")
-    .attr("style", "color:green")
     .attr("aria-busy", "true")
     .text("Submitting...");
 
@@ -251,13 +250,14 @@ $("#autoSubmit").click(() => {
     success: (data) => {
       $("#autoResult").attr("aria-busy", "false").empty();
       if (data.status === "success" && data.found > 0) {
+        $("#autoResult").text(data.message || "No result message found.");
+
+        let listContainer = $('<div id=listDiv></div>');
+
         // Create a "Select All" checkbox
-        let selectAllContainer = $('<div></div>').css({"margin-bottom": "1em"});
         let selectAllCheckbox = $('<input type="checkbox" id="selectAll">');
         let selectAllLabel = $('<label for="selectAll"> Select All</label>');
-        selectAllContainer.append(selectAllCheckbox).append(selectAllLabel);
-        $("#autoResult").append(selectAllContainer);
-      
+        listContainer.append(selectAllCheckbox).append(selectAllLabel);
         // Create a UL with id "submitList"
         let list = $("<ul></ul>").attr("id", "submitList");
       
@@ -267,10 +267,11 @@ $("#autoSubmit").click(() => {
           let checkbox = $('<input type="checkbox" class="submission-item">').attr("data-index", idx);
         
           li.append(checkbox);
-          li.append(` Train ${item.ticket} from ${item.from} to ${item.to} scheduled at ${item.departureTime} was ${item.status}`);
+          li.append(` Train ${item.ticket} from ${item.from} to ${item.to} scheduled at ${item.departureTime} ${item.departureDate} was ${item.status}`);
           list.append(li);
         });
-        $("#autoResult").append(list);
+        listContainer.append(list)
+        $("#autoResult").append(listContainer);
       
         // Add a button to submit selected items.
         let submitBtn = $('<button type="button" id="submitSelected">Submit selected</button>');
