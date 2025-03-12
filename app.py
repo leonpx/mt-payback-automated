@@ -102,15 +102,15 @@ def submit_selected():
         try:
             # Call op.submit() for each selected item.
             # It is assumed that each item contains the necessary keys.
-            #r = op.submit(
-            #    item.get("ticket"),
-            #    item.get("from"),
-            #    item.get("to"),
-            #    item.get("departureDate"),
-            #    item.get("departureTime"),
-            #    data.get("customer")  # Pass along customer info if available
-            #)
-            r = True
+            r = op.submit(
+                item.get("ticket"),
+                item.get("from"),
+                item.get("to"),
+                item.get("departureDate"),
+                item.get("departureTime"),
+                data.get("customer")  # Pass along customer info if available
+            )
+            #r = True
             if r:
                 submitted_count += 1
             else:
