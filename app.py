@@ -18,6 +18,8 @@ app = Flask(__name__)
 
 tz = pytz.timezone("Europe/Stockholm")
 
+debug_mode = False
+
 @app.route("/", methods=["GET"])
 def index():
     resp = make_response(
@@ -110,7 +112,6 @@ def submit_selected():
                 item.get("departureTime"),
                 data.get("customer")  # Pass along customer info if available
             )
-            #r = True
             if r:
                 submitted_count += 1
             else:
@@ -246,7 +247,8 @@ def get_delayed_or_cancelled(departure_station, arrival_station, start_time, end
     # Convert start and end times to ISO 8601 format.
     start_str = start_time.isoformat()
     end_str = end_time.isoformat()
-    print(f"START: {start_str}, END: {end_str}")
+    if debug_mode:
+        print(f"START: {start_str}, END: {end_str}")
     
     # Build the XML query for Trafikverket API, using the provided API key.
     query = f"""
@@ -343,7 +345,10 @@ def get_delayed_or_cancelled(departure_station, arrival_station, start_time, end
         if status in {"canceled", "delay"}:
             date_str = dep_ann["adv_time"].strftime("%Y-%m-%d")
             time_str = dep_ann["adv_time"].strftime("%H:%M:%S")
-            print(f"DATE: {date_str}, TIME: {time_str}")
+
+            if debug_mode:
+                print(f"DATE: {date_str}, TIME: {time_str}")
+
             delayed_or_cancelled.append({
                 "ticket": train_id,
                 "from": dep_station,
