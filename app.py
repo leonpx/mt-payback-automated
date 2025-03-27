@@ -8,8 +8,8 @@ from flask import (
     send_from_directory,
     jsonify,
 )
-import datetime
 from dateutil import parser
+import datetime
 import pytz
 import requests
 import operators
@@ -83,7 +83,9 @@ def get_departures(departure_station, arrival_station, date):
         params={
             "departureStationId": departure_station,
             "arrivalStationId": arrival_station,
-            "departureDate": date,
+            "departureDate": (parser.parse(date) - datetime.timedelta(days=7)).strftime(
+                "%Y-%m-%d"
+            ),
         },
     )
 
@@ -361,19 +363,6 @@ def get_delayed_or_cancelled(departure_station, arrival_station, start_time, end
             })
 
     return delayed_or_cancelled
-
-def get_train_number(departure_station, arrival_station, departure_time):
-    r = requests.get(
-        "https://evf-regionsormland.preciocloudapp.net/api/TrainStations/GetDistance",
-        params={
-            "departureStationId": departure_station,
-            "arrivalStationId": arrival_station,
-            "departureDate": departure_time,
-        },
-    )
-
-    return r.json()["data"]["trafikverketTrainId"]
-
 
 @app.route("/api/arrival_stations/<station>", methods=["GET"])
 def get_arrival_stations(station):
