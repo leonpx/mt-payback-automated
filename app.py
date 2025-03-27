@@ -230,7 +230,8 @@ def get_delayed_or_cancelled(departure_station, arrival_station, start_time, end
     (from 00:00 to 24:00) for the given departure_station and arrival_station.
     
     Returns a list of dictionaries for announcements that were either cancelled
-    or delayed by more than 20 minutes. Each dictionary contains:
+    or delayed by more than 20 minutes, sorted by departure time (most recent first).
+    Each dictionary contains:
       - ticket: the train identifier (AdvertisedTrainIdent)
       - from: departure station (from the announcement's FromLocation if available,
               otherwise the provided departure_station)
@@ -359,9 +360,17 @@ def get_delayed_or_cancelled(departure_station, arrival_station, start_time, end
                 "departureTime": time_str,
                 "canceled": arr_ann["canceled"],
                 "delay": delay,
-                "ActivityType": arr_ann["ActivityType"]
+                "ActivityType": arr_ann["ActivityType"],
+                "sort_time": dep_ann["adv_time"]  # Add this field for sorting
             })
 
+    # Sort the results by departure time in descending order (most recent first)
+    delayed_or_cancelled.sort(key=lambda x: x["sort_time"])
+    
+    # Remove the sort_time field before returning
+    for item in delayed_or_cancelled:
+        del item["sort_time"]
+        
     return delayed_or_cancelled
 
 @app.route("/api/arrival_stations/<station>", methods=["GET"])
