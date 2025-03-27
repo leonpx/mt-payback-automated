@@ -252,6 +252,9 @@ $("#autoSubmit").click(() => {
       if (data.status === "success" && data.found > 0) {
         $("#autoResult").text(data.message || "No result message found.");
 
+        // Store the items in autoItems array
+        autoItems = data.items;
+
         let listContainer = $('<div id=listDiv></div>');
 
         // Create a "Select All" checkbox
@@ -314,12 +317,22 @@ $("#autoResult").on("click", "#submitSelected", () => {
     $("#autoResult").html("<p style='color:red;'>Please select at least one item to submit.</p>");
     return;
   }
+
+  // Get customer information from localStorage
+  let customer = null;
+  if (localStorage.getItem("ticketholders") && localStorage.getItem("ticketholder")) {
+    let ticketholders = JSON.parse(localStorage.getItem("ticketholders"));
+    customer = ticketholders[localStorage.getItem("ticketholder")];
+  }
   
   $.ajax({
     type: "POST",
     url: "/api/submit_selected",
     contentType: "application/json",
-    data: JSON.stringify({ items: selectedItems }),
+    data: JSON.stringify({ 
+      items: selectedItems,
+      customer: customer
+    }),
     success: (data) => {
       // Render the returned message in the #autoResult element.
       $("#autoResult").html("<p style='color:green;'>" + data.message + "</p>");
